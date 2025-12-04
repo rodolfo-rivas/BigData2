@@ -1,0 +1,16 @@
+<configuration>
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://localhost:9000</value>
+  </property>
+
+  <!-- PERMITIR A ec2-user ACTUAR COMO PROXY USER -->
+  <property>
+    <name>hadoop.proxyuser.ec2-user.hosts</name>
+    <value>*</value>
+  </property>
+  <property>
+    <name>hadoop.proxyuser.ec2-user.groups</name>
+    <value>*</value>
+  </property>
+</configuration>

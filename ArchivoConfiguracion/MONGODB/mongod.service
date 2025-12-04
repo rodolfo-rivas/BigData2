@@ -1,0 +1,15 @@
+[Unit]
+Description=MongoDB Server
+After=network.target
+
+[Service]
+Type=simple
+User=mongo
+PIDFile=/var/lib/mongod/mongod.pid
+ExecStart=/usr/local/bin/mongod --config /var/lib/mongod/config.yml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -4,7 +4,34 @@ Sistema de análisis de datos agrícolas que integra múltiples fuentes de datos
 
 ---
 
-## 📁 Estructura de Archivos
+## 📁 Estructura del Proyecto
+
+```
+BigData/
+├── ArchivoConfiguracion/        # Archivos de configuración de servicios
+│   ├── HDFS/                    # Configuración Hadoop
+│   │   ├── core-site.xml
+│   │   ├── hdfs-site.xml
+│   │   ├── mapred-site.xml
+│   │   └── yarn-site.xml
+│   ├── Hive/                    # Configuración Hive
+│   │   └── hive-site.xml
+│   └── MONGODB/                 # Configuración MongoDB
+│       ├── config.yml
+│       └── mongod.service
+├── generator.py                 # Generador de datos sintéticos
+├── mydb.sql                     # Schema MySQL
+├── poblado_tablas_completo.sql  # Datos MySQL (generado)
+├── carga_mongodb.js             # Datos MongoDB (generado)
+├── datos_sensores_api.sql       # Datos sensores IoT
+├── etl.py                       # Pipeline ETL
+├── consultas_hive.sql           # Consultas analíticas
+└── README.md                    # Este archivo
+```
+
+---
+
+## 📁 Archivos de Datos y Scripts
 
 ### 🔧 **generator.py**
 **Propósito:** Script generador de datos sintéticos para el proyecto.
@@ -50,7 +77,7 @@ python generator.py
 
 **Uso:**
 ```powershell
-mysql -u root -p < mysql.sql
+mysql -u root -p < mydb.sql
 ```
 
 ---
@@ -206,28 +233,31 @@ hive -f consultas_hive.sql
 python generator.py
 ```
 
-### **Paso 2: Carga en MySQL**
+### **Paso 2: Configurar Servicios**
+Ver sección [Configuración de Servicios](#-configuración-de-servicios).
+
+### **Paso 3: Carga en MySQL**
 ```powershell
-mysql -u root -p < mysql.sql
+mysql -u root -p < mydb.sql
 mysql -u root -p AgroDataSur < poblado_tablas_completo.sql
 mysql -u root -p AgroDataSur < datos_sensores_api.sql
 ```
 
-### **Paso 3: Carga en MongoDB**
+### **Paso 4: Carga en MongoDB**
 ```powershell
 mongosh < carga_mongodb.js
 ```
 
-### **Paso 4: Configurar API REST**
+### **Paso 5: Configurar API REST**
 Implementar servidor que exponga `/api/sensores_data` desde tabla MySQL.
 
-### **Paso 5: Ejecutar ETL**
+### **Paso 6: Ejecutar ETL**
 ```powershell
 # Configurar credenciales en etl.py
 python etl.py
 ```
 
-### **Paso 6: Crear Tablas Hive**
+### **Paso 7: Crear Tablas Hive**
 ```bash
 # En Hive CLI
 CREATE EXTERNAL TABLE ventas_hive (...)
@@ -240,7 +270,7 @@ CREATE EXTERNAL TABLE sensores_hive (...)
 LOCATION '/user/hadoop/datos/sensores/';
 ```
 
-### **Paso 7: Análisis**
+### **Paso 8: Análisis**
 ```bash
 hive -f consultas_hive.sql
 ```
@@ -264,7 +294,163 @@ hive -f consultas_hive.sql
 
 ---
 
-## 🔧 Configuración
+## ⚙️ Configuración de Servicios
+
+El directorio `ArchivoConfiguracion/` contiene todas las configuraciones necesarias para el entorno Big Data.
+
+### 🐘 **HDFS - Hadoop Distributed File System**
+
+#### **core-site.xml**
+Configuración del sistema de archivos principal.
+
+**Propiedades clave:**
+```xml
+<property>
+  <name>fs.defaultFS</name>
+  <value>hdfs://localhost:9000</value>
+</property>
+```
+- Define el NameNode en puerto 9000
+- Configuración de proxy user para ec2-user
+
+**Ubicación:** `$HADOOP_HOME/etc/hadoop/core-site.xml`
+
+---
+
+#### **hdfs-site.xml**
+Configuración específica de HDFS.
+
+**Propiedades clave:**
+```xml
+<property>
+  <name>dfs.replication</name>
+  <value>1</value>
+</property>
+```
+- Factor de replicación: 1 (modo single-node)
+
+**Ubicación:** `$HADOOP_HOME/etc/hadoop/hdfs-site.xml`
+
+---
+
+#### **mapred-site.xml**
+Configuración de MapReduce.
+
+**Propiedades clave:**
+```xml
+<property>
+  <name>mapreduce.framework.name</name>
+  <value>yarn</value>
+</property>
+```
+- MapReduce ejecuta sobre YARN
+
+**Ubicación:** `$HADOOP_HOME/etc/hadoop/mapred-site.xml`
+
+---
+
+#### **yarn-site.xml**
+Configuración de YARN (gestión de recursos).
+
+**Propiedades clave:**
+```xml
+<property>
+  <name>yarn.nodemanager.aux-services</name>
+  <value>mapreduce_shuffle</value>
+</property>
+```
+- Habilita shuffle service para MapReduce
+
+**Ubicación:** `$HADOOP_HOME/etc/hadoop/yarn-site.xml`
+
+---
+
+### 🐝 **Hive - Data Warehouse**
+
+#### **hive-site.xml**
+Configuración de Hive para consultas analíticas.
+
+**Propiedades principales:**
+
+| Propiedad | Valor | Descripción |
+|-----------|-------|-------------|
+| `hive.metastore.warehouse.dir` | `hdfs://localhost:9000/user/hive/warehouse` | Ubicación del warehouse |
+| `javax.jdo.option.ConnectionURL` | `jdbc:derby:;databaseName=metastore_db;create=true` | Metastore embebido (Derby) |
+| `hive.exec.scratchdir` | `/tmp/hive` | Directorio temporal |
+
+**Ubicación:** `$HIVE_HOME/conf/hive-site.xml`
+
+**Nota:** Usa Derby embebido para desarrollo. Para producción considerar MySQL/PostgreSQL.
+
+---
+
+### 🍃 **MongoDB - Base de Datos NoSQL**
+
+#### **config.yml**
+Configuración principal de MongoDB.
+
+**Contenido:**
+```yaml
+storage:
+  engine: wiredTiger              # Motor de almacenamiento
+  dbPath: /var/lib/mongod/data    # Directorio de datos
+
+systemLog:
+  destination: file
+  path: /var/log/mongodb/mongod.log
+  logAppend: true
+
+net:
+  bindIp: 0.0.0.0                 # Acepta conexiones remotas
+  port: 27017
+
+security:
+  authorization: enabled           # Autenticación habilitada
+
+setParameter:
+  enableLocalhostAuthBypass: true  # Permite crear admin inicial
+```
+
+**Ubicación:** `/var/lib/mongod/config.yml`
+
+---
+
+#### **mongod.service**
+Servicio systemd para MongoDB.
+
+**Contenido:**
+```ini
+[Unit]
+Description=MongoDB Server
+After=network.target
+
+[Service]
+Type=simple
+User=mongo
+ExecStart=/usr/local/bin/mongod --config /var/lib/mongod/config.yml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Instalación del servicio:**
+```bash
+sudo cp ArchivoConfiguracion/MONGODB/mongod.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable mongod
+sudo systemctl start mongod
+```
+
+**Verificar estado:**
+```bash
+sudo systemctl status mongod
+```
+
+---
+
+## 🔧 Configuración de Aplicación
 
 ### Credenciales a Modificar
 
@@ -283,6 +469,52 @@ hdfs dfs -mkdir -p /user/hadoop/datos/opiniones
 hdfs dfs -mkdir -p /user/hadoop/datos/sensores
 ```
 
+### Inicialización de Servicios
+
+#### Hadoop/HDFS
+```bash
+# Formatear NameNode (solo primera vez)
+hdfs namenode -format
+
+# Iniciar servicios
+start-dfs.sh
+start-yarn.sh
+
+# Verificar
+jps  # Debe mostrar: NameNode, DataNode, ResourceManager, NodeManager
+```
+
+#### Hive
+```bash
+# Inicializar schema de metastore (solo primera vez)
+schematool -dbType derby -initSchema
+
+# Crear directorios en HDFS
+hdfs dfs -mkdir -p /user/hive/warehouse
+hdfs dfs -mkdir -p /tmp/hive
+hdfs dfs -chmod g+w /user/hive/warehouse
+hdfs dfs -chmod g+w /tmp/hive
+
+# Iniciar Hive
+hive
+```
+
+#### MongoDB
+```bash
+# Crear usuario administrador (solo primera vez)
+mongosh
+use admin
+db.createUser({
+  user: "admin",
+  pwd: "tu_password",
+  roles: ["root"]
+})
+exit
+
+# Reiniciar servicio
+sudo systemctl restart mongod
+```
+
 ---
 
 ## 📊 Datos Generados
@@ -299,13 +531,116 @@ hdfs dfs -mkdir -p /user/hadoop/datos/sensores
 
 ---
 
-## 📝 Notas
+## 🔍 Verificación del Sistema
 
-- Los códigos de productos siguen formato: `XXX-YY-NNN` (Tipo-Descripción-Número)
+### Comprobar servicios activos
+
+```bash
+# HDFS
+hdfs dfsadmin -report
+
+# YARN
+yarn node -list
+
+# MongoDB
+mongosh --eval "db.adminCommand('ping')"
+
+# MySQL
+mysql -u root -p -e "SHOW DATABASES;"
+```
+
+### Verificar datos en HDFS
+
+```bash
+# Listar archivos
+hdfs dfs -ls /user/hadoop/datos/ventas/
+hdfs dfs -ls /user/hadoop/datos/opiniones/
+hdfs dfs -ls /user/hadoop/datos/sensores/
+
+# Ver contenido (primeras líneas)
+hdfs dfs -cat /user/hadoop/datos/ventas/ventas_data.csv | head
+```
+
+---
+
+## 📝 Notas Técnicas
+
+### Códigos de Productos
+Formato: `XXX-YY-NNN` (Tipo-Descripción-Número)
+
+Ejemplos:
+- `MAN-FJ-001`: Manzanas Fuji
+- `ARD-PR-002`: Arándanos Premium
+- `TRG-GR-004`: Trigo Granel
+
+### Datos Temporales
 - Las fechas de ventas abarcan enero-noviembre 2025
+- Los datos de sensores son de noviembre 2025
 - Los RUTs son sintéticos pero siguen formato chileno
-- Los datos de sensores simulan IoT agrícola real
-- El proyecto cumple con requisitos de +200 registros por fuente
+
+### Características del Sistema
+- **Modo de despliegue:** Single-node (desarrollo)
+- **Replicación HDFS:** Factor 1
+- **Metastore Hive:** Derby embebido
+- **MongoDB:** Autenticación habilitada
+- **Cumplimiento:** +200 registros por fuente de datos
+
+---
+
+## 🚨 Troubleshooting
+
+### Problema: HDFS no inicia
+```bash
+# Ver logs
+cat $HADOOP_HOME/logs/hadoop-*-namenode-*.log
+
+# Reformatear (⚠️ BORRA DATOS)
+stop-dfs.sh
+rm -rf /tmp/hadoop-*
+hdfs namenode -format
+start-dfs.sh
+```
+
+### Problema: MongoDB no acepta conexiones
+```bash
+# Verificar puerto
+sudo netstat -tlnp | grep 27017
+
+# Ver logs
+sudo tail -f /var/log/mongodb/mongod.log
+
+# Revisar permisos
+sudo chown -R mongo:mongo /var/lib/mongod
+```
+
+### Problema: Hive no encuentra tablas
+```bash
+# Verificar metastore
+ls -la metastore_db/
+
+# Reinicializar (⚠️ BORRA METADATOS)
+rm -rf metastore_db/
+schematool -dbType derby -initSchema
+```
+
+---
+
+## 📚 Referencias
+
+### Documentación Oficial
+- [Hadoop Documentation](https://hadoop.apache.org/docs/)
+- [Hive Documentation](https://hive.apache.org/)
+- [MongoDB Manual](https://docs.mongodb.com/)
+
+### Puertos por Defecto
+| Servicio | Puerto | URL |
+|----------|--------|-----|
+| HDFS NameNode | 9000 | hdfs://localhost:9000 |
+| HDFS NameNode Web UI | 9870 | http://localhost:9870 |
+| YARN ResourceManager | 8088 | http://localhost:8088 |
+| MongoDB | 27017 | mongodb://localhost:27017 |
+| MySQL | 3306 | localhost:3306 |
+| API Sensores | 3000 | http://localhost:3000 |
 
 ---
 
