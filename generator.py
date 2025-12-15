@@ -1,6 +1,8 @@
 import random
 import datetime
 import json
+import csv
+import math
 
 # --- CONFIGURACIÓN ---
 CANTIDAD_VENTAS = 220    # Mínimo 200 según rúbrica
@@ -67,6 +69,7 @@ UBICACIONES_PREDIOS = [
 
 # Listas para guardar las claves generadas y asegurar integridad referencial
 lista_ruts_generados = []
+clientes_data = [] # Para generar CSV
 lista_codigos_productos = [p[0] for p in PRODUCTOS_BASE]
 
 sql_script = []
@@ -97,6 +100,8 @@ for i in range(CANTIDAD_CLIENTES):
     
     nombre = f"{random.choice(NOMBRES)} {random.choice(APELLIDOS)}"
     region = random.choice(REGIONES)
+    
+    clientes_data.append({"rut": rut, "nombre": nombre, "region": region})
     values_cli.append(f"('{rut}', '{nombre}', '{region}')")
 
 sql_script.append(",\n".join(values_cli) + ";")
@@ -119,6 +124,10 @@ sql_script.append("")
 sql_script.append("-- 4. Insertando Ventas (Transacciones)")
 sql_script.append("INSERT INTO ventas (fecha, rut_cliente, codigo_producto, cantidad, sucursal) VALUES")
 values_ventas = []
+ventas_csv_data = []
+
+# Diccionario de precios para lógica de negocio
+precios_dict = {p[0]: p[2] for p in PRODUCTOS_BASE}
 
 for i in range(CANTIDAD_VENTAS):
     fecha = datetime.date(2025, random.randint(1, 11), random.randint(1, 28))
@@ -126,9 +135,43 @@ for i in range(CANTIDAD_VENTAS):
     rut_fk = random.choice(lista_ruts_generados)
     prod_fk = random.choice(lista_codigos_productos)
     
-    cantidad = random.randint(10, 200)
+    # Lógica de Negocio: A mayor precio, menor cantidad (Curva de demanda)
+    # + Estacionalidad (Simulada)
+    precio_unit = precios_dict[prod_fk]
+    
+    month = fecha.month
+    seasonality = 1.0
+    # Verano (Ene, Feb, Dic) -> Mayor demanda
+    if month in [1, 2, 12]: seasonality = 1.4
+    # Invierno (Jun, Jul, Ago) -> Menor demanda
+    elif month in [6, 7, 8]: seasonality = 0.8
+    
+    # Fórmula: Cantidad = (Constante / Precio) * Estacionalidad * Ruido
+    base_quantity = (300000 / precio_unit) * seasonality
+    cantidad = int(base_quantity * random.uniform(0.7, 1.3)) # +/- 30% de ruido
+    cantidad = max(1, min(cantidad, 500)) # Limites realistas
+    
     sucursal = random.choice(SUCURSALES)
     
+    # Datos para CSV
+    cliente = next(c for c in clientes_data if c["rut"] == rut_fk)
+    producto = next(p for p in PRODUCTOS_BASE if p[0] == prod_fk)
+    
+    ventas_csv_data.append({
+        "fecha": fecha,
+        "anio": fecha.year,
+        "mes": fecha.month,
+        "dia": fecha.day,
+        "rut_cliente": rut_fk,
+        "region_cliente": cliente["region"],
+        "codigo_producto": prod_fk,
+        "nombre_producto": producto[1],
+        "precio_unitario": producto[2],
+        "cantidad": cantidad,
+        "total_venta": cantidad * producto[2],
+        "sucursal": sucursal
+    })
+
     values_ventas.append(f"('{fecha}', '{rut_fk}', '{prod_fk}', {cantidad}, '{sucursal}')")
 
 sql_script.append(",\n".join(values_ventas) + ";")
@@ -152,12 +195,44 @@ for i in range(CANTIDAD_OPINIONES):
     region = random.choice(REGIONES)
     producto = random.choice(PRODUCTOS_NOMBRES) # <--- AQUÍ ESTÁ LA CLAVE DE LA CONSISTENCIA
     
-    # Lógica simple: Calificación alta = comentario positivo
-    calificacion = random.randint(1, 5)
+    # Lógica de Negocio: 
+    # 1. Calidad base del producto
+    # 2. Penalización por demora en despacho
+    
+    calidad_base = random.randint(3, 5)
+    if "Premium" in producto or "Export" in producto:
+        calidad_base = random.randint(4, 5)
+    elif "Malla" in producto:
+        calidad_base = random.randint(2, 4)
+        
+    # Factor Despacho
+    dias_despacho = int(random.expovariate(1/3)) + 1 # Distribución exponencial, media 3 días
+    if dias_despacho > 15: dias_despacho = 15 # Tope
+    
+    score = calidad_base
+    motivo_bajo = "calidad"
+    
+    if dias_despacho > 5:
+        score -= 1
+    if dias_despacho > 8:
+        score -= 2
+        motivo_bajo = "despacho"
+        
+    # Ajuste final y comentarios
+    calificacion = max(1, min(5, score))
+    
     if calificacion >= 4:
         comentario = random.choice(COMENTARIOS_POSITIVOS)
     else:
-        comentario = random.choice(COMENTARIOS_NEGATIVOS)
+        if motivo_bajo == "despacho":
+            comentario = random.choice([
+                "El producto es bueno pero demoró mucho.",
+                "Llegó muy tarde, pésimo servicio de entrega.",
+                f"Esperé {dias_despacho} días, inaceptable.",
+                "El despacho fue un desastre."
+            ])
+        else:
+            comentario = random.choice(COMENTARIOS_NEGATIVOS)
     
     fecha = str(datetime.date(2025, random.randint(1, 11), random.randint(1, 28)))
     
@@ -169,7 +244,8 @@ for i in range(CANTIDAD_OPINIONES):
         "producto_comprado": producto,
         "calificacion": calificacion,
         "comentario": comentario,
-        "fecha": fecha
+        "fecha": fecha,
+        "dias_despacho": dias_despacho # Dato útil para predicción
     }
     opiniones.append(documento)
 
@@ -218,6 +294,7 @@ sql_script.append("")
 sql_script.append("-- Insertando datos simulados")
 sql_script.append("INSERT INTO sensores_data (id_sensor, ubicacion, temperatura, humedad, co2, timestamp) VALUES")
 values_list = []
+sensores_csv_data = []
 
 for i in range(CANTIDAD_REGISTROS):
     ubicacion = random.choice(UBICACIONES_PREDIOS)
@@ -225,13 +302,39 @@ for i in range(CANTIDAD_REGISTROS):
     prefix = ubicacion.split()[0][:3].upper() + "-" + ubicacion.split()[1][0].upper()
     id_sensor = f"SENS-{prefix}-{random.randint(1, 5):02d}"
 
-    temp = round(random.uniform(10.0, 35.2), 2)
-    humedad = round(random.uniform(30.0, 90.0), 2)
-    co2 = random.randint(350, 600)
-
     start_date = datetime.datetime(2025, 11, 1)
     random_minutes = random.randint(0, 30 * 24 * 60)
     ts = start_date + datetime.timedelta(minutes=random_minutes)
+    
+    # Ciclo diario de temperatura (Simulación sinusoidal)
+    hour = ts.hour
+    # Pico de calor a las 15:00 (hora 15)
+    temp_base = 20
+    variacion_dia = 10 * math.sin((hour - 9) * math.pi / 12) 
+    temp = temp_base + variacion_dia + random.uniform(-2, 2)
+    temp = round(temp, 2)
+
+    # Humedad inversamente proporcional a la temperatura
+    humedad = 100 - (temp * 2.5) + random.uniform(-10, 10)
+    humedad = round(max(10, min(100, humedad)), 2)
+    
+    co2 = random.randint(350, 600)
+    
+    # Inyectar anomalías ocasionales (5% de probabilidad)
+    if random.random() < 0.05:
+        if random.random() < 0.5:
+            temp += 15 # Pico de calor
+        else:
+            co2 += 400 # Pico de CO2
+    
+    sensores_csv_data.append({
+        "id_sensor": id_sensor,
+        "ubicacion": ubicacion,
+        "temperatura": temp,
+        "humedad": humedad,
+        "co2": co2,
+        "timestamp": ts
+    })
 
     values_list.append(f"('{id_sensor}', '{ubicacion}','{temp}', '{humedad}', '{co2}', '{ts}')")
 
@@ -240,3 +343,44 @@ sql_script.append(",\n".join(values_list) + ";")
 
 with open("datos_sensores_api.sql", "w", encoding="utf-8") as f:
     f.write("\n".join(sql_script))
+
+# --- GENERAR ARCHIVOS CSV PARA ANALISIS PREDICTIVO ---
+print("Generando archivos CSV para análisis predictivo...")
+
+# 1. Dataset Ventas (Regresión)
+with open("dataset_ventas.csv", "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=["fecha", "anio", "mes", "dia", "rut_cliente", "region_cliente", "codigo_producto", "nombre_producto", "precio_unitario", "cantidad", "total_venta", "sucursal"])
+    writer.writeheader()
+    writer.writerows(ventas_csv_data)
+
+# 2. Dataset Opiniones (Clasificación)
+# Convertir la lista de opiniones (que tiene estructura anidada/json) a plana para CSV
+opiniones_csv_data = []
+for op in opiniones:
+    opiniones_csv_data.append({
+        "id_cliente": op["id_cliente"],
+        "nombre": op["nombre"],
+        "region": op["region"],
+        "producto_comprado": op["producto_comprado"],
+        "calificacion": op["calificacion"],
+        "comentario": op["comentario"],
+        "fecha": op["fecha"],
+        "dias_despacho": op.get("dias_despacho", 0), # Nuevo campo
+        "sentimiento_target": "Positivo" if op["calificacion"] >= 4 else "Negativo" # Target derivado
+    })
+
+with open("dataset_opiniones.csv", "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=["id_cliente", "nombre", "region", "producto_comprado", "calificacion", "comentario", "fecha", "dias_despacho", "sentimiento_target"])
+    writer.writeheader()
+    writer.writerows(opiniones_csv_data)
+
+# 3. Dataset Sensores (Regresión/Clasificación)
+with open("dataset_sensores.csv", "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=["id_sensor", "ubicacion", "temperatura", "humedad", "co2", "timestamp"])
+    writer.writeheader()
+    writer.writerows(sensores_csv_data)
+
+print("¡Archivos CSV generados exitosamente!")
+print("- dataset_ventas.csv")
+print("- dataset_opiniones.csv")
+print("- dataset_sensores.csv")

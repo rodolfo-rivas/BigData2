@@ -45,6 +45,9 @@ BigData/
 - **Salidas generadas:**
   - `poblado_tablas_completo.sql`: Scripts INSERT para MySQL
   - `carga_mongodb.js`: Datos de opiniones para MongoDB
+  - `dataset_ventas.csv`: Dataset para modelos de regresión
+  - `dataset_opiniones.csv`: Dataset para modelos de clasificación
+  - `dataset_sensores.csv`: Dataset de series de tiempo IoT
 
 **Configuración:**
 - `CANTIDAD_VENTAS`: 220 registros (mínimo 200)
@@ -60,7 +63,34 @@ python generator.py
 
 ---
 
-### 🗄️ **mydb.sql**
+### � **analisis_predictivo.py**
+**Propósito:** Script de Python para realizar análisis exploratorio y predictivo sobre los datos generados.
+
+**Funcionalidades:**
+- **Análisis de Ventas (Regresión):**
+  - Predice la cantidad vendida basada en el precio unitario (Curva de demanda).
+  - Utiliza **Regresión Lineal**.
+  - Genera gráficos de ventas por región y evolución temporal.
+- **Análisis de Opiniones (Clasificación):**
+  - Clasifica opiniones en Positivas/Negativas.
+  - Utiliza **Regresión Logística** basada en Región y Producto.
+  - Genera matriz de confusión y distribución de sentimientos.
+
+**Gráficos Generados:**
+- `grafico_ventas_region.png`: Ventas totales por región.
+- `grafico_ventas_tiempo.png`: Evolución diaria de ventas.
+- `grafico_regresion_ventas.png`: Relación Precio vs Cantidad.
+- `grafico_opiniones_sentimiento.png`: Distribución de opiniones.
+- `grafico_confusion_opiniones.png`: Matriz de confusión del modelo.
+
+**Uso:**
+```powershell
+python analisis_predictivo.py
+```
+
+---
+
+### �🗄️ **mydb.sql**
 **Propósito:** Script de definición de esquema para base de datos relacional.
 
 **Contenido:**
